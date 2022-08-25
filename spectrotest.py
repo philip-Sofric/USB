@@ -2,13 +2,13 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter.messagebox import showinfo
 from ctypes import *
-import pandas as pd
-from scipy.signal import savgol_filter as sg_smoothing
-from scipy import interpolate
+# import pandas as pd
+# from scipy.signal import savgol_filter as sg_smoothing
+# from scipy import interpolate
 import numpy as np
-import matplotlib.pyplot as plt
-import time
-import os
+# import matplotlib.pyplot as plt
+# import time
+# import os
 from spectrotestfunctions import *
 
 Channel = c_int(0)
@@ -40,57 +40,45 @@ getTemperature2 = c_double(20)
 detector_temperature_array = [-25]
 chamber_temperature_array = [20]
 
-
 xarray = np.arange(0, PixelNum, 1)
-
-
-def parse_line(str_array):
-    para = ''
-    start = 0
-    for character in str_array:
-        if character == '=':
-            start = 1
-        else:
-            if start == 0:
-                continue
-            elif character == '-':
-                break
-            else:
-                para += character
-    return para
+modelwith2stagecooling = ['BTC284N', 'BTC281Y']
+modelwithCDC = ['BTC284N', 'BTC281Y']
 
 
 def initialization():
+    label_initialize = ttk.Label(root, text='')
+    label_initialize.place(x=250, y=10)
     isInitialized = add_lib.InitDevices()
+    global button_readEEPROM
     if isInitialized:
-        ttk.Label(root, text='device is initialized').place(x=250, y=10)
+        button_initialize['text'] = 'device is initialized'
+        button_readEEPROM['state'] = 'normal'
     else:
-        ttk.Label(root, text='device initialization fails').place(x=250, y=10)
+        button_initialize['text'] = 'device initialization fails'
+        button_readEEPROM['state'] = 'disabled'
 
 
 def readEEPROM():
-    getEEPROM = add_lib.bwtekReadEEPROMUSB('p', Channel)
+    getEEPROM = add_lib.bwtekReadEEPROMUSB('para.ini', Channel)
     global PixelNum
     global Model
     global SpectrometerType
     global TimingMode
     global InputMode
-    if getEEPROM:
-        with open('p') as file:
-            for line in map(str.strip, file):
-                if line.startswith('pixel_num'):
-                    PixelNum = int(parse_line(line))
-                elif line.startswith('model'):
-                    Model = str(parse_line(line))
-                elif line.startswith('spectrometer_type'):
-                    SpectrometerType = int(parse_line(line))
-                elif line.startswith('timing_mode'):
-                    TimingMode = int(parse_line(line))
-                elif line.startswith('input_mode'):
-                    InputMode = int(parse_line(line))
-
-        ttk.Label(root, text=f'EEPROM reading is successful. Model is {Model}').place(x=250, y=40)
+    global button_TestUSB
+    label_EEPROM = ttk.Label(root)
+    label_EEPROM.place(x=250, y=40)
+    if getEEPROM > 0:
+        button_TestUSB['state'] = 'normal'
+        PixelNum = getPixelNumfromEEPROM('p')
+        Model = getModelfromEEPROM('p')
+        SpectrometerType = getSPTypefromEEPROM('p')
+        TimingMode = getTimingModefromEEPROM('p')
+        InputMode = getInputModefromEEPROM('p')
+        temperature_param_config(Model)
+        label_EEPROM.config(text=f'EEPROM reading is successful. Model is {Model}')
     else:
+        button_TestUSB['state'] = 'disabled'
         ttk.Label(root, text='EEPROM reading fails').place(x=250, y=40)
 
 
@@ -108,25 +96,42 @@ def temperature_param_config(spmodel):
         Command2 = 0x62
 
 
-def TestUSB():
+def testUSB():
+    label_testUSB = ttk.Label(root, text='Setting Communication')
+    label_testUSB.place(x=250, y=70)
     isCommunicated = add_lib.bwtekTestUSB(TimingMode, PixelNum, InputMode, Channel, Param)
+    global button_GetInGaAsMode
+    global button_SetInGaAsMode
     if isCommunicated < 0:
-        ttk.Label(root, text='Communication error').place(x=250, y=70)
+        label_testUSB['text'] = 'Communication error'
     else:
-        ttk.Label(root, text='Device timing mode {} and input mode {}'.format(TimingMode, InputMode)).place(x=250, y=70)
+        label_testUSB['text'] = 'Device is ready'
+        if Model.startswith('BTC26') or Model.startswith('BTC28'):
+            button_GetInGaAsMode['state'] = 'normal'
+            button_SetInGaAsMode['state'] = 'normal'
+            listbox_IGA.place(x=250, y=130)
+        if Model in modelwith2stagecooling:
+            button_readTemperature1['state'] = 'normal'
+            button_readTemperature2['state'] = 'normal'
+            button_setTemperature1['state'] = 'normal'
+            button_setTemperature2['state'] = 'normal'
 
 
 def getInGaAsMode():
+    label_getIGA = ttk.Label(root, text='Getting InGaAs mode')
+    label_getIGA.place(x=250, y=100)
     add_lib.bwtekGetInGaAsMode(byref(ModeValue), Channel)
     if ModeValue.value == 0:
-        ttk.Label(root, text=f'InGaAs mode is high sensitivity').place(x=250, y=100)
+        label_getIGA['text'] = 'InGaAs mode is high sensitivity'
+    elif ModeValue.value == 1:
+        label_getIGA['text'] = 'InGaAs mode is high dynamic range'
     else:
-        ttk.Label(root, text=f'InGaAs mode is high dynamic range').place(x=250, y=100)
+        label_getIGA['text'] = 'unable to get InGaAs working mode'
 
 
 def setIGAValue(event):
     global ModeValue
-    selected_index = listbox.curselection()[0]
+    selected_index = listbox_IGA.curselection()[0]
     if selected_index == 0:
         ModeValue = c_int(0)
     else:
@@ -134,12 +139,14 @@ def setIGAValue(event):
 
 
 def setInGaAsMode():
+    label_setIGA = ttk.Label(root, text='Setting InGaAs mode')
+    label_setIGA.place(x=500, y=130)
     add_lib.bwtekSetInGaAsMode(ModeValue, Channel)
     add_lib.bwtekGetInGaAsMode(byref(ModeValue), Channel)
     if ModeValue.value == 0:
-        ttk.Label(root, text=f'InGaAs mode is high sensitivity').place(x=500, y=130)
+        label_setIGA['text'] = 'InGaAs mode is high sensitivity'
     else:
-        ttk.Label(root, text=f'InGaAs mode is high dynamic range').place(x=500, y=130)
+        label_setIGA['text'] = 'InGaAs mode is high dynamic range'
 
 
 def getTemperature_stage1():
@@ -152,22 +159,19 @@ def getTemperature_stage2():
     ttk.Label(root, text=f'Chamber temperature is {getTemperature2.value}').place(x=250, y=190)
 
 
-def setdetectortempvalue(event):
+def setDetectortempvalue(event):
     global setTemperature1
     x = listbox_t1.curselection()[0]
     print(type(listbox_t1.get(x)))
 
 
-def setchambertempvalue(event):
+def setChambertempvalue(event):
     global setTemperature2
     selected_index = listbox_t2.curselection()[0]
     if selected_index == 0:
         ModeValue = c_int(0)
     else:
         ModeValue = c_int(1)
-
-
-
 
 
 def setTemperature_stage1():
@@ -194,51 +198,52 @@ button_initialize = ttk.Button(root, text='Initialize spectrometer', width=30, c
 button_initialize.place(x=10, y=10)
 # button_initialize.update_idletasks()
 
-button_readEEPROM = ttk.Button(root, text='Read EEPROM', width=30, command=readEEPROM)
+button_readEEPROM = ttk.Button(root, text='Read EEPROM', state='disabled', width=30, command=readEEPROM)
 # button_readEEPROM.state(state)
 button_readEEPROM.place(x=10, y=40)
 
 # label_modelmatch = ttk.Label(root, text='Model matched')
 # label_modelmatch.pack()
 
-button_TestUSB = ttk.Button(root, text='Test USB', width=30, command=TestUSB)
+button_TestUSB = ttk.Button(root, text='Test USB', state='disabled', width=30, command=testUSB)
 button_TestUSB.place(x=10, y=70)
 
-
-button_GetInGaAsMode = ttk.Button(root, text='Get InGaAs mode', width=30, command=getInGaAsMode)
+button_GetInGaAsMode = ttk.Button(root, text='Get InGaAs mode', state='disabled', width=30, command=getInGaAsMode)
 button_GetInGaAsMode.place(x=10, y=100)
 
-button_SetInGaAsMode = ttk.Button(root, text='Set InGaAs mode', width=30, command=setInGaAsMode)
+button_SetInGaAsMode = ttk.Button(root, text='Set InGaAs mode', state='disabled', width=30, command=setInGaAsMode)
 button_SetInGaAsMode.place(x=10, y=130)
 
 InGaAs = tk.StringVar(value=InGaAsMode)
-listbox = tk.Listbox(root, listvariable=InGaAs, height=2, selectmode='browse')
-listbox.place(x=250, y=130)
-listbox.bind('<<ListboxSelect>>', setIGAValue)
+listbox_IGA = tk.Listbox(root, listvariable=InGaAs, height=2, selectmode='browse')
+# listbox_IGA.place(x=250, y=130)
+listbox_IGA.bind('<<ListboxSelect>>', setIGAValue)
 
-button_readTemperature1 = ttk.Button(root, text='Read detector temperature', width=30, command=getTemperature_stage1)
+button_readTemperature1 = ttk.Button(root, text='Read detector temperature', state='disabled', width=30,
+                                     command=getTemperature_stage1)
 button_readTemperature1.place(x=10, y=160)
 
-button_readTemperature2 = ttk.Button(root, text='Read chamber temperature', width=30, command=getTemperature_stage2)
+button_readTemperature2 = ttk.Button(root, text='Read chamber temperature', state='disabled', width=30,
+                                     command=getTemperature_stage2)
 button_readTemperature2.place(x=10, y=190)
 
-button_setTemperature1 = ttk.Button(root, text='Set detector temperature', width=30, command=setTemperature_stage1)
+button_setTemperature1 = ttk.Button(root, text='Set detector temperature', state='disabled', width=30,
+                                    command=setTemperature_stage1)
 button_setTemperature1.place(x=10, y=220)
 
-temp = tk.StringVar(value=detector_temperature_array)
-listbox_t1 = tk.Listbox(root, listvariable=temp, height=5, selectmode='browse')
+temp1 = tk.StringVar(value=detector_temperature_array)
+listbox_t1 = tk.Listbox(root, listvariable=temp1, height=5, selectmode='browse')
 listbox_t1.place(x=250, y=220)
-listbox_t1.bind('<<ListboxSelect>>', setdetectortempvalue)
+listbox_t1.bind('<<ListboxSelect>>', setDetectortempvalue)
 
-
-button_setTemperature2 = ttk.Button(root, text='Set chamber temperature', width=30, command=setTemperature_stage2)
+button_setTemperature2 = ttk.Button(root, text='Set chamber temperature', state='disabled', width=30,
+                                    command=setTemperature_stage2)
 button_setTemperature2.place(x=10, y=350)
 # button_setTemperature2.grid(padx=200, pady=50)
 
 temp2 = tk.StringVar(value=chamber_temperature_array)
 listbox_t2 = tk.Listbox(root, listvariable=temp2, height=5, selectmode='browse')
 listbox_t2.place(x=250, y=350)
-listbox_t2.bind('<<ListboxSelect>>', setchambertempvalue)
-
+listbox_t2.bind('<<ListboxSelect>>', setChambertempvalue)
 
 root.mainloop()
