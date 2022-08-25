@@ -1,3 +1,2 @@
-modelname = 'BTC284N1064'
-if modelname.startswith('BTC284N'):
-    print('BTC284N')
+a = 123.4567891045
+print(f'{a:8.4}')

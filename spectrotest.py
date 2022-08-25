@@ -1,3 +1,4 @@
+import time
 import tkinter as tk
 from tkinter import ttk
 from tkinter.messagebox import showinfo
@@ -23,7 +24,8 @@ Param = c_int(0)
 
 # InGaAs mode
 InGaAsMode = ('High Sensitivity', 'High Dynamic')
-ModeValue = c_int(0)
+getModeValue = c_int(0)
+setModelValue = c_int(0)
 
 # Temperature
 Command1 = c_int(0x41)
@@ -37,12 +39,19 @@ setTemperature2 = c_double(20)
 getTemperature1 = c_double(0)
 getTemperature2 = c_double(20)
 
-detector_temperature_array = [-25]
-chamber_temperature_array = [20]
+# gain and offset
+gain = 10000
+offset = 1000
+
+detector_temperature_array = [-25, -20, -10, 0]
+chamber_temperature_array = [20, 25, 30]
 
 xarray = np.arange(0, PixelNum, 1)
-modelwith2stagecooling = ['BTC284N', 'BTC281Y']
-modelwithCDC = ['BTC284N', 'BTC281Y']
+gain_array = np.arange(10000, 60001, 1000)
+offset_array = np.arange(100, 4001, 100)
+
+modelwith2stagecooling = ['BTC284N', 'BTC281Y', 'HHEX']
+modelwithCDC = ['BTC284N', 'BTC281Y', 'HHEX']
 
 
 def initialization():
@@ -51,10 +60,10 @@ def initialization():
     isInitialized = add_lib.InitDevices()
     global button_readEEPROM
     if isInitialized:
-        button_initialize['text'] = 'device is initialized'
+        label_initialize['text'] = 'device is initialized'
         button_readEEPROM['state'] = 'normal'
     else:
-        button_initialize['text'] = 'device initialization fails'
+        label_initialize['text'] = 'device initialization fails'
         button_readEEPROM['state'] = 'disabled'
 
 
@@ -109,79 +118,98 @@ def testUSB():
         if Model.startswith('BTC26') or Model.startswith('BTC28'):
             button_GetInGaAsMode['state'] = 'normal'
             button_SetInGaAsMode['state'] = 'normal'
-            listbox_IGA.place(x=250, y=130)
+            listbox_IGA.place(x=500, y=130)
         if Model in modelwith2stagecooling:
             button_readTemperature1['state'] = 'normal'
             button_readTemperature2['state'] = 'normal'
             button_setTemperature1['state'] = 'normal'
             button_setTemperature2['state'] = 'normal'
+            listbox_t1.place(x=500, y=220)
+            listbox_t2.place(x=500, y=350)
+        if Model in modelwithCDC:
+
 
 
 def getInGaAsMode():
     label_getIGA = ttk.Label(root, text='Getting InGaAs mode')
     label_getIGA.place(x=250, y=100)
-    add_lib.bwtekGetInGaAsMode(byref(ModeValue), Channel)
-    if ModeValue.value == 0:
+    add_lib.bwtekGetInGaAsMode(byref(getModeValue), Channel)
+    if getModeValue.value == 0:
         label_getIGA['text'] = 'InGaAs mode is high sensitivity'
-    elif ModeValue.value == 1:
+    elif getModeValue.value == 1:
         label_getIGA['text'] = 'InGaAs mode is high dynamic range'
     else:
         label_getIGA['text'] = 'unable to get InGaAs working mode'
 
 
 def setIGAValue(event):
-    global ModeValue
+    global setModelValue
     selected_index = listbox_IGA.curselection()[0]
-    if selected_index == 0:
-        ModeValue = c_int(0)
-    else:
-        ModeValue = c_int(1)
+    setModelValue = c_int(selected_index)
+    # print(setModelValue)
 
 
 def setInGaAsMode():
     label_setIGA = ttk.Label(root, text='Setting InGaAs mode')
-    label_setIGA.place(x=500, y=130)
-    add_lib.bwtekSetInGaAsMode(ModeValue, Channel)
-    add_lib.bwtekGetInGaAsMode(byref(ModeValue), Channel)
-    if ModeValue.value == 0:
-        label_setIGA['text'] = 'InGaAs mode is high sensitivity'
+    label_setIGA.place(x=250, y=130)
+    add_lib.bwtekSetInGaAsMode(setModelValue, Channel)
+    getInGaAsMode()
+    if setModelValue.value == 0:
+        label_setIGA['text'] = 'InGaAs mode is set high sensitivity'
+    elif setModelValue.value == 1:
+        label_setIGA['text'] = 'InGaAs mode is set high dynamic range'
     else:
-        label_setIGA['text'] = 'InGaAs mode is high dynamic range'
+        label_setIGA['text'] = 'Wrong'
 
 
 def getTemperature_stage1():
-    add_lib.bwtekReadTemperature(Command1, byref(ADValue), byref(getTemperature1), Channel)
-    ttk.Label(root, text=f'Detector temperature is {getTemperature1.value}').place(x=250, y=160)
+    label_getTemp1 = ttk.Label(root, text='Getting detector temperature...')
+    label_getTemp1.place(x=250, y=160)
+    isreadTemp1 = add_lib.bwtekReadTemperature(Command1, byref(ADValue), byref(getTemperature1), Channel)
+    if isreadTemp1 > 0:
+        label_getTemp1['text'] = f'Detector temperature is {getTemperature1.value:6.4}'
+    else:
+        label_getTemp1['text'] = 'Detector temperature read fails'
 
 
 def getTemperature_stage2():
-    add_lib.bwtekReadTemperature(Command2, byref(ADValue), byref(getTemperature2), Channel)
-    ttk.Label(root, text=f'Chamber temperature is {getTemperature2.value}').place(x=250, y=190)
+    label_getTemp2 = ttk.Label(root, text='Getting chamber temperature...')
+    label_getTemp2.place(x=250, y=190)
+    isreadTemp2 = add_lib.bwtekReadTemperature(Command2, byref(ADValue), byref(getTemperature2), Channel)
+    if isreadTemp2 > 0:
+        label_getTemp2['text'] = f'Chamber temperature is {getTemperature2.value:6.4}'
+    else:
+        label_getTemp2['text'] = 'Chamber temperature read fails'
 
 
 def setDetectortempvalue(event):
     global setTemperature1
-    x = listbox_t1.curselection()[0]
-    print(type(listbox_t1.get(x)))
+    selected_index = listbox_t1.curselection()[0]
+    setTemperature1 = detector_temperature_array[selected_index]
+    print(setTemperature1)
 
 
 def setChambertempvalue(event):
     global setTemperature2
     selected_index = listbox_t2.curselection()[0]
-    if selected_index == 0:
-        ModeValue = c_int(0)
-    else:
-        ModeValue = c_int(1)
+    setTemperature2 = detector_temperature_array[selected_index]
+    print(setTemperature2)
 
 
 def setTemperature_stage1():
+    label_setdetectorT = ttk.Label(root, text=f'Setting detector temperature {setTemperature1}')
+    label_setdetectorT.place(x=250, y=220)
     add_lib.bwtekSetTemperatureUSB(DAChannel1, setTemperature1, Channel)
-    ttk.Label(root, text=f'Set temperature to{setTemperature1}').place(x=250, y=220)
+    time.sleep(5)
+    getTemperature_stage1()
 
 
 def setTemperature_stage2():
+    label_setdetectorT = ttk.Label(root, text=f'Setting chamber temperature {setTemperature2}')
+    label_setdetectorT.place(x=250, y=250)
     add_lib.bwtekSetTemperatureUSB(DAChannel2, setTemperature2, Channel)
-    ttk.Label(root, text=f'Set Chamber temperature is{setTemperature2}').place(x=250, y=250)
+    time.sleep(5)
+    getTemperature_stage2()
 
 
 dll_path = 'bwtekusb.dll'
@@ -233,7 +261,6 @@ button_setTemperature1.place(x=10, y=220)
 
 temp1 = tk.StringVar(value=detector_temperature_array)
 listbox_t1 = tk.Listbox(root, listvariable=temp1, height=5, selectmode='browse')
-listbox_t1.place(x=250, y=220)
 listbox_t1.bind('<<ListboxSelect>>', setDetectortempvalue)
 
 button_setTemperature2 = ttk.Button(root, text='Set chamber temperature', state='disabled', width=30,
@@ -243,7 +270,11 @@ button_setTemperature2.place(x=10, y=350)
 
 temp2 = tk.StringVar(value=chamber_temperature_array)
 listbox_t2 = tk.Listbox(root, listvariable=temp2, height=5, selectmode='browse')
-listbox_t2.place(x=250, y=350)
 listbox_t2.bind('<<ListboxSelect>>', setChambertempvalue)
+
+gaintext = tk.StringVar()
+textbox_gain = tk.Entry(root, textvariable=gaintext, width='10')
+
+
 
 root.mainloop()
