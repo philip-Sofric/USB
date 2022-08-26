@@ -1,1 +1,4 @@
 Type,Temperature,Integration time(s),Optimized Gain,Optimized offset,Standard deviation
+O,-25,1000,40000,453,1380.2038581709924
+O,-25,5000,40000,3915,4713.166689648167
+O,-25,10000,40000,2063,5675.848125148201
