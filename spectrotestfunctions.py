@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy import interpolate
 
+
 def parse_line(str_array):
     para = ''
     start = 0
@@ -12,8 +13,8 @@ def parse_line(str_array):
         else:
             if start == 0:
                 continue
-            elif character == '-':
-                break
+            # elif character == '-':
+            #     break
             else:
                 para += character
     return para
@@ -37,6 +38,8 @@ def getModelfromEEPROM(parafilename):
                 _Model = str(parse_line(line))
                 if _Model.startswith('BTC284N'):
                     _Model = 'BTC284N'
+                elif _Model.startswith('BWS492') or _Model.startswith('BWS493'):
+                    _Model = 'HHEX'
                 break
     return _Model
 
@@ -69,6 +72,60 @@ def getInputModefromEEPROM(parafilename):
                 _InputMode = int(parse_line(line))
                 break
     return _InputMode
+
+
+def geta_coeffromEEPROM(parafilename):
+    _a_coeff = np.zeros(4)
+    with open(parafilename) as file:
+        for line in map(str.strip, file):
+            if line.startswith('coefs_a0'):
+                _a_coeff[0] = float(parse_line(line))
+            if line.startswith('coefs_a1'):
+                _a_coeff[1] = float(parse_line(line))
+            if line.startswith('coefs_a2'):
+                _a_coeff[2] = float(parse_line(line))
+            if line.startswith('coefs_a3'):
+                _a_coeff[3] = float(parse_line(line))
+    return _a_coeff
+
+
+def getLaserwavelengthfromEEPROM(parafilename):
+    _LEW = 0
+    with open(parafilename) as file:
+        for line in map(str.strip, file):
+            if line.startswith('laser_wavelength'):
+                _LEW = float(parse_line(line))
+    return _LEW
+
+
+def getGainfromEEPROM(parafilename):
+    _gain = 0
+    with open(parafilename) as file:
+        for line in map(str.strip, file):
+            if line.startswith('OPAM_Gain'):
+                _gain = int(parse_line(line))
+    return _gain
+
+
+def getOffsetfromEEPROM(parafilename):
+    _offset = 0
+    with open(parafilename) as file:
+        for line in map(str.strip, file):
+            if line.startswith('VideoSignal_Offset'):
+                _offset = int(parse_line(line))
+    return _offset
+
+
+def getReversefromEEPROM(parafilename):
+    _ReverseX = 0
+    _ReverseY = 0
+    with open(parafilename) as file:
+        for line in map(str.strip, file):
+            if line.startswith('xaxis_data_reverse'):
+                _ReverseX = int(parse_line(line))
+            elif line.startswith('yaxis_data_reverse'):
+                _ReverseY = int(parse_line(line))
+    return _ReverseX, _ReverseY
 
 
 def calc_STD(ydata):
@@ -123,3 +180,12 @@ def find_minimum(datafile):
             break
     return min_values
 
+
+def convertASCII2string(pointerarray, leng):
+    name_string = ''
+    for i in np.arange(0, leng, 1):
+        if pointerarray[i] != 0:
+            name_string += chr(pointerarray[i])
+        else:
+            break
+    return name_string
