@@ -139,9 +139,9 @@ def Set_Time(setvalue):
 
 def lASER_initialize():
     islaserInitialized = -1
+    global_variables.LR_channel = add_lib.GetLaserChannel()
     # USB laser has specific channel other than spectrometer
-    if global_variables.InterfaceType == 0 and add_lib.GetLaserChannel() >= 0:
-        global_variables.LR_channel = add_lib.GetLaserChannel()
+    if global_variables.InterfaceType == 0 and global_variables.LR_channel >= 0:
         islaserInitialized = add_lib.bwtekinitializeLC(0, global_variables.LR_channel)
         if islaserInitialized > 0:
             global_variables.LaserType = 1
@@ -159,6 +159,12 @@ def lASER_initialize():
 
 
 def Set_Laser(addr):
+    if addr == 0x14:
+        add_lib.bwtekSetTTLOut(1, 1, 0, global_variables.Channel)
+    elif addr == 0x15:
+        add_lib.bwtekSetTTLOut(1, 0, 0, global_variables.Channel)
+    else:
+        pass
     issetIPSlaser = add_lib.bwtekSetIPSLaserAddress(addr, global_variables.Channel)
     return issetIPSlaser
 
@@ -192,17 +198,19 @@ def Get_All_LaserInfo(addr):
 
 def Set_Laser_Power(pctg):
     if global_variables.LaserType == 1:
-        pass
+        add_lib.bwtekSetDACLC(4, 4095, 0)
     elif global_variables.LaserType == 2:
-        a = add_lib.bwtekSetIPSLaserEnable(1, global_variables.Channel)
-        print(a)
-        b = add_lib.bwtekSetIPSLaserPWMEnable(1, global_variables.Channel)
-        print(b)
+
+        add_lib.bwtekSetIPSLaserPWMDuty(0, global_variables.Channel)
+
+        add_lib.bwtekSetIPSLaserPWMEnable(1, global_variables.Channel)
+        add_lib.bwtekSetIPSLaserEnable(1, global_variables.Channel)
         isLaserpowerset = add_lib.bwtekSetIPSLaserPWMDuty(pctg, global_variables.Channel)
         if isLaserpowerset == 1:
             print('The actual laser power is ', pctg.value)
         else:
             print('Laser power set fails')
+        # bwtekGetIPSLaserCurrent
     elif global_variables.LaserType == 3:
         pass
     else:

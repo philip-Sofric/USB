@@ -228,9 +228,15 @@ def setIntegrationTime():
 def initializeLaser():
     t = lASER_initialize()
     label_initializeLaser['text'] = global_variables.LaserTypes[global_variables.LaserType]
-    if t > 0 and global_variables.LaserType == 2:
-        radio_laser_1.place(x=50, y=40)
-        radio_laser_2.place(x=150, y=40)
+    if t > 0 and global_variables.LaserType == 1:
+        radio_laser_0.place(x=50, y=40)
+        radio_laser_1.place(x=200, y=40)
+        radio_laser_2.place_forget()
+
+    elif t > 0 and global_variables.LaserType == 2:
+        radio_laser_0.place(x=50, y=40)
+        radio_laser_1.place(x=200, y=40)
+        radio_laser_2.place(x=300, y=40)
         Get_All_LaserInfo(global_variables.IPSLaser1)
         Get_All_LaserInfo(global_variables.IPSLaser2)
     else:
@@ -241,18 +247,28 @@ def initializeLaser():
 def SetLaser():
     lo = laseroption.get()
     lo = int(lo)
-    IPSLaserAdd = 0
-    if lo != 1 and lo != 2:
-        pass
-    else:
+    if lo == 0:
+        button_setLP['state'] = 'disabled'
+        label_getIPSLaserAddress.place_forget()
+        label_getIPSLaserLEW.place_forget()
+        label_getIPSLaserPWMDuty.place_forget()
+        label_getIPSLaserPower.place_forget()
+    elif global_variables.LaserType == 1:
+        pass  # Cleanlaze
+    elif global_variables.LaserType == 2:
         if lo == 1:
-            IPSLaserAdd = global_variables.IPSLaser1
+            global_variables.IPSLaserAdd = 20
         elif lo == 2:
-            IPSLaserAdd = global_variables.IPSLaser2
+            global_variables.IPSLaserAdd = 21
+        else:
+            pass
         button_setLP['state'] = 'normal'
-        Set_Laser(IPSLaserAdd)
-        Get_All_LaserInfo(IPSLaserAdd)
-        label_getIPSLaserAddress['text'] = IPSLaserAdd
+        print('This is to check which laser is selected', global_variables.IPSLaserAdd)
+
+        Set_Laser(global_variables.IPSLaserAdd)
+        Get_All_LaserInfo(global_variables.IPSLaserAdd)
+        # add_lib.bwtekSetIPSLaserFactorySetting2PowerUpSetting(0)
+        label_getIPSLaserAddress['text'] = global_variables.IPSLaserAdd
         label_getIPSLaserLEW['text'] = str(global_variables.IPSWL)
 
         print(global_variables.IPSWL)
@@ -269,7 +285,8 @@ def SetLaser():
         label_getIPSLaserLEW.place(x=46, y=100)
         label_getIPSLaserPWMDuty.place(x=46, y=130)
         label_getIPSLaserPower.place(x=46, y=160)
-
+    elif global_variables.LaserType == 3:
+        pass  # hh laser
 
 
 def getLaserWL():
@@ -308,7 +325,8 @@ def scan():
                                                         global_variables.Channel)
     elif global_variables.InterfaceType == 1:
         a = time.time()
-        isDataReadSuccessful = add_librs.bwtekDataReadRS232(trigger, byref(data_array), Channel)
+        isDataReadSuccessful = add_librs.bwtekDataReadRS232(global_variables.trigger, byref(data_array),
+                                                            global_variables.Channel)
         b = time.time()
         print(f'delta time is {(b - a):6.4} s')
     if isDataReadSuccessful == global_variables.PixelNum:
@@ -579,6 +597,8 @@ label_initializeLaser = ttk.Label(tab_laser, width=30, text='laser to be initial
 label_initializeLaser.place(x=250, y=10)
 
 laseroption = tk.IntVar()
+radio_laser_0 = ttk.Radiobutton(tab_laser, text='No Laser selected', variable=laseroption, value=0,
+                                command=SetLaser)
 radio_laser_1 = ttk.Radiobutton(tab_laser, text='Laser 1', variable=laseroption, value=1,
                                 command=SetLaser)
 radio_laser_2 = ttk.Radiobutton(tab_laser, text='Laser 2', variable=laseroption, value=2,
@@ -596,7 +616,6 @@ label_getIPSLaserBoardStatus = ttk.Label(tab_laser)
 label_getIPSLaserPower = ttk.Label(tab_laser)
 label_getIPSLaserCurrent = ttk.Label(tab_laser)
 label_getIPSLaserTECTemp = ttk.Label(tab_laser)
-
 
 button_setLP = ttk.Button(tab_laser, text='Set Laser Power', state='disabled', width=30,
                           command=setLaserPower)

@@ -61,6 +61,7 @@ IPSModel = ''
 IPSSN = ''
 IPSWL = ''
 IPSVersion = ''
+IPSLaserAdd = 0
 
 
 InterfaceType = 0

@@ -73,13 +73,13 @@ else:
     #     cc += chr(CCode[i])
     # print(cc)
 #
-IPSLaser1 = 0x14 # 860
-IPSLaser2 = 0x15 # 1064
+IPSLaser1 = 0x14  # 860
+IPSLaser2 = 0x15  # 1064
 setIPSlaserAdd = add_lib.bwtekSetIPSLaserAddress(IPSLaser2, Channel)
 if setIPSlaserAdd > 0:
-    print('Laser 0x41 is found')
+    print('Laser is set to 1064')
 else:
-    print('IPS 0x41 not found')
+    print('IPS 0x15-1064 not found')
 
 #
 getlaserinfo = add_lib.bwtekGetIPSLaserInfo(Channel)
@@ -128,6 +128,14 @@ if getIPSWL > 0:
     IPSLaserWL = float(IPSLaserWL)
     print(f'IPS laser wavelength is {IPSLaserWL}')
 
+# this is to set laser power percentage
+duty = 0
+issetlp = add_lib.bwtekSetIPSLaserPWMDuty(duty, Channel)
+if issetlp > 0:
+    print('setting laser power successfully.')
+else:
+    print('setting laser power fails.')
+
 # this is to enable/disable laser operation
 Enable = 1
 getIPSStatus = add_lib.bwtekSetIPSLaserEnable(Enable, Channel)
@@ -143,22 +151,13 @@ if enablePWM:
 else:
     print('Digital mode is not enabled')
 
+add_lib.bwtekSetIPSLaserPWMDuty(100)
 
-# this is to set laser power percentage
-duty = 100
-pctg = add_lib.bwtekSetIPSLaserPWMDuty(duty, Channel)
-if pctg > 0:
-    print('set laser power percentage is ', pctg)
-else:
-    print('setting laser power fails')
-
+# add_lib.bwtekSetIPSLaserPWMDuty(0)
 
 # this is to get laser power
 LP = add_lib.bwtekGetIPSLaserPower(Channel)
 print(f'laser power is {LP}')
-
-
-
 
 # getlaserchannel = add_lib.GetLaserChannel()
 # if getlaserchannel >= 0:
