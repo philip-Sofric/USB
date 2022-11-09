@@ -1,6 +1,8 @@
+# wrapper of functions from SDK
+
 from ctypes import *
 import global_variables
-from spectrotestfunctions import *
+from std_functions import *
 
 dll_path = 'bwtekusb.dll'
 RS_path = r'C:\Users\4510042\PycharmProjects\USB\bwtekrs.dll'
@@ -24,10 +26,19 @@ def SP_initialize():
 def SP_EEPROM():
     getEEPROM = -1
     if global_variables.InterfaceType == 0:
-        getEEPROM = add_lib.bwtekReadEEPROMUSB('para.ini', global_variables.Channel)
+        getEEPROM = add_lib.bwtekReadEEPROMUSB(b'para.ini', global_variables.Channel)
     elif global_variables.InterfaceType == 1:
-        getEEPROM = add_librs.bwtekReadEEPROMRS232('para.ini', global_variables.Channel)
+        getEEPROM = add_librs.bwtekReadEEPROMRS232(b'para.ini', global_variables.Channel)
     return getEEPROM
+
+
+def SP_EEPROM_write(parafile):
+    setEEPROM = -1
+    if global_variables.InterfaceType == 0:
+        setEEPROM = add_lib.bwtekWriteEEPROMUSB(bytes(parafile, encoding='utf8'), global_variables.Channel)
+    elif global_variables.InterfaceType == 1:
+        setEEPROM = add_librs.bwtekWriteEEPROMRS232(bytes(parafile, encoding='utf8'), global_variables.Channel)
+    return setEEPROM
 
 
 def SP_test():
@@ -170,7 +181,6 @@ def Set_Laser(addr):
 
 
 def Get_All_LaserInfo(addr):
-    # print('addr is', addr)
     length = 10
     _IPSModel = (c_byte * length)()
     _IPSSN = (c_byte * length)()
@@ -206,10 +216,10 @@ def Set_Laser_Power(pctg):
         add_lib.bwtekSetIPSLaserPWMEnable(1, global_variables.Channel)
         add_lib.bwtekSetIPSLaserEnable(1, global_variables.Channel)
         isLaserpowerset = add_lib.bwtekSetIPSLaserPWMDuty(pctg, global_variables.Channel)
-        if isLaserpowerset == 1:
-            print('The actual laser power is ', pctg.value)
-        else:
-            print('Laser power set fails')
+        # if isLaserpowerset == 1:
+        #     print('The actual laser power is ', pctg.value)
+        # else:
+        #     print('Laser power set fails')
         # bwtekGetIPSLaserCurrent
     elif global_variables.LaserType == 3:
         pass
@@ -234,3 +244,24 @@ def Close_Laser():
         pass
     else:
         pass
+
+
+# ydata_array is (c_ushort * global_variables.PixelNum)()
+def Get_Data():
+    data_array = (c_ushort * global_variables.PixelNum)()
+    isDataReadSuccessful = -1
+    if global_variables.InterfaceType == 0:
+        isDataReadSuccessful = add_lib.bwtekDataReadUSB(global_variables.trigger, byref(data_array),
+                                                        global_variables.Channel)
+    elif global_variables.InterfaceType == 1:
+        isDataReadSuccessful = add_librs.bwtekDataReadRS232(global_variables.trigger, byref(data_array),
+                                                            global_variables.Channel)
+    # reverse data if applicable
+    if isDataReadSuccessful == global_variables.PixelNum:
+        if global_variables.ReverseX == 1:
+            data_array = data_array[::-1]
+        if global_variables.ReverseY == 1:
+            data_array = np.ones(global_variables.PixelNum, ) * 65535 - data_array
+        return data_array
+    else:
+        return []

@@ -1,18 +1,18 @@
 import tkinter as tk
 from tkinter import ttk
-# from tkinter.messagebox import showinfo
-from ctypes import *
-import pandas as pd
-import numpy as np
+import tkinter.filedialog as fd
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import os
 import time
-from spectrotestfunctions import *
 from SDKfunctions import *
 import global_variables
 
 datapath = r'C:\Users\4510042\PycharmProjects\USB\Data'
+dll_path = 'bwtekusb.dll'
+RS_path = r'C:\Users\4510042\PycharmProjects\USB\bwtekrs.dll'
+add_lib = CDLL(dll_path)
+add_librs = CDLL(RS_path)
 
 
 def param_config(parafile):
@@ -25,10 +25,14 @@ def param_config(parafile):
     global_variables.LEW = getLaserwavelengthfromEEPROM(parafile)
     global_variables.gain = getGainfromEEPROM(parafile)
     global_variables.offset = getOffsetfromEEPROM(parafile)
-    global_variables.a_coff = geta_coeffromEEPROM('p')
+    # global_variables.a_coff = geta_coeffromEEPROM('p')
+    global_variables.a_coff = [1.03746166e+03, 9.01004426e-01, -6.01681827e-04, 1.84154643e-06]
     global_variables.ReverseX, global_variables.ReverseY = getReversefromEEPROM(parafile)
+    # global_variables.ReverseX = 1
+    global_variables.pixel_array = np.arange(0, global_variables.PixelNum, 1)
+    global_variables.data_P_array = (c_ushort * global_variables.PixelNum)()
     # parameters by SP model
-    if global_variables.Model == 'BTC284N':
+    if global_variables.Model == 'BTC284N' or 'BTC284C':
         global_variables.Command1 = 0x41
         global_variables.Command2 = 0x42
         global_variables.DAChannel1 = 1
@@ -52,7 +56,7 @@ def param_config(parafile):
 def setInterface():
     TT = interfacetype.get()
     global_variables.InterfaceType = int(TT) - 1
-    print(f'Interface type is {global_variables.InterfaceTypes[global_variables.InterfaceType]}')
+    # print(f'Interface type is {global_variables.InterfaceTypes[global_variables.InterfaceType]}')
     if global_variables.InterfaceType == 0:
         button_Test['text'] = 'TestUSB'
         button_initialize['state'] = 'normal'
@@ -77,6 +81,7 @@ def initialization():
     if SP_initialize() > 0:
         label_initialize['text'] = 'device is initialized'
         button_readEEPROM['state'] = 'normal'
+        button_writeEEPROM['state'] = 'normal'
     else:
         label_initialize['text'] = 'device initialization fails'
         button_readEEPROM['state'] = 'disabled'
@@ -86,21 +91,32 @@ def readEEPROM():
     label_EEPROM = ttk.Label(tab_functions)
     label_EEPROM.place(x=250, y=70)
     if SP_EEPROM() > 0:
-        param_config('p')
+        param_config('para.ini')
         # print('Model is', global_variables.Model)
         label_EEPROM.config(text=f'EEPROM reading is successful. Model is {global_variables.Model}')
         # Operations on Tkinter widgets
         button_Test['state'] = 'normal'
         textbox_gain.insert(0, str(global_variables.gain))
         textbox_offset.insert(0, str(global_variables.offset))
-
-        #
-        # reference info print screen
-        print('X reverse is {}, Y reserve is {}'.format(global_variables.ReverseX, global_variables.ReverseY))
-        #
     else:
         button_Test['state'] = 'disabled'
         label_EEPROM['text'] = 'EEPROM reading fails'
+
+
+def writeEEPROM():
+    label_EEPROM_write = ttk.Label(tab_functions)
+    label_EEPROM_write['text'] = ''
+    label_EEPROM_write.place_forget()
+    filetypes = (('text file', '*.txt'), ('ini file', '*.ini'), ('all files', '*.*'))
+    filename = fd.askopenfilename(title='Open a file',
+                                  initialdir=r'C:\Users\4510042\PycharmProjects\USB',
+                                  filetypes=filetypes)
+    if SP_EEPROM_write(filename) > 0:
+        label_EEPROM_write.config(text=f'EEPROM writing is successful. Please read flash again!')
+    else:
+        label_EEPROM_write['text'] = 'EEPROM writing fails.'
+    # label_EEPROM_write['text'] = SP_EEPROM_write(filename)
+    label_EEPROM_write.place(x=250, y=460)
 
 
 def test():
@@ -110,8 +126,13 @@ def test():
         button_inttime['state'] = 'normal'
         label_inttime.place(x=220, y=370)
         textbox_inttime.place(x=350, y=370)
+        button_inttime_concate1['state'] = 'normal'
+        button_inttime_concate2['state'] = 'normal'
         button_scan['state'] = 'normal'
+        button_scan2['state'] = 'normal'
         button_close['state'] = 'normal'
+        button_monitor['state'] = 'normal'
+
         if global_variables.Model.startswith('BTC26') or global_variables.Model.startswith('BTC28'):
             button_GetInGaAsMode['state'] = 'normal'
             button_SetInGaAsMode['state'] = 'normal'
@@ -149,7 +170,7 @@ def getInGaAsMode():
         label_getIGA['text'] = 'unable to get InGaAs working mode'
 
 
-def setIGAValue(event):
+def setIGAValue():
     selected_index = listbox_IGA.curselection()[0]
     global_variables.setModelValue = c_int(selected_index)
 
@@ -228,12 +249,22 @@ def setIntegrationTime():
 def initializeLaser():
     t = lASER_initialize()
     label_initializeLaser['text'] = global_variables.LaserTypes[global_variables.LaserType]
+    LP.set('0')
     if t > 0 and global_variables.LaserType == 1:
+        # cleanlaze power set to 0
+        global_variables.laser_power = c_double(0.0)
         radio_laser_0.place(x=50, y=40)
         radio_laser_1.place(x=200, y=40)
         radio_laser_2.place_forget()
 
     elif t > 0 and global_variables.LaserType == 2:
+        # set power to 0
+        global_variables.laser_power = c_double(0.0)
+        global_variables.laser_power2 = c_double(0.0)
+        Set_Laser(0x14)
+        Set_Laser_Power(global_variables.laser_power)
+        Set_Laser(0x15)
+        Set_Laser_Power(global_variables.laser_power2)
         radio_laser_0.place(x=50, y=40)
         radio_laser_1.place(x=200, y=40)
         radio_laser_2.place(x=300, y=40)
@@ -248,30 +279,41 @@ def SetLaser():
     lo = laseroption.get()
     lo = int(lo)
     if lo == 0:
+        LP.set('0')
+        if global_variables.LaserType == 1:
+            pass  # cleanlaze power set to 0
+        if global_variables.LaserType == 2:
+            # turn off both lasers but not change laser power values
+            Set_Laser(global_variables.IPSLaser1)
+            Set_Laser_Power(c_double(0.0))
+            Set_Laser(global_variables.IPSLaser2)
+            Set_Laser_Power(c_double(0.0))
+            global_variables.laser_power = c_double(0.0)
         button_setLP['state'] = 'disabled'
         label_getIPSLaserAddress.place_forget()
         label_getIPSLaserLEW.place_forget()
         label_getIPSLaserPWMDuty.place_forget()
         label_getIPSLaserPower.place_forget()
-    elif global_variables.LaserType == 1:
-        pass  # Cleanlaze
-    elif global_variables.LaserType == 2:
-        if lo == 1:
-            global_variables.IPSLaserAdd = 20
-        elif lo == 2:
-            global_variables.IPSLaserAdd = 21
+    elif lo == 1:
+        if global_variables.LaserType == 1:
+            pass  # Cleanlaze
+        elif global_variables.LaserType == 2:
+            global_variables.IPSLaserAdd = 20  # 860nm
         else:
             pass
+    elif lo == 2:
+        global_variables.IPSLaserAdd = 21  # 1064nm
+    else:
+        pass
+    if lo == 1 or lo == 2:
         button_setLP['state'] = 'normal'
-        print('This is to check which laser is selected', global_variables.IPSLaserAdd)
-
         Set_Laser(global_variables.IPSLaserAdd)
         Get_All_LaserInfo(global_variables.IPSLaserAdd)
-        # add_lib.bwtekSetIPSLaserFactorySetting2PowerUpSetting(0)
         label_getIPSLaserAddress['text'] = global_variables.IPSLaserAdd
-        label_getIPSLaserLEW['text'] = str(global_variables.IPSWL)
-
-        print(global_variables.IPSWL)
+        global_variables.LEW = float(global_variables.IPSWL)
+        label_getIPSLaserLEW['text'] = str(global_variables.LEW)
+        # print(global_variables.LEW)
+        # add_lib.bwtekSetIPSLaserFactorySetting2PowerUpSetting(0)
         label_getIPSLaserPWMDuty['text'] = str(Get_IPSLaser_PWMDuty())
         label_getIPSLaserPower['text'] = str(Get_IPSLaser_Power())
         # remove existing texts
@@ -285,8 +327,64 @@ def SetLaser():
         label_getIPSLaserLEW.place(x=46, y=100)
         label_getIPSLaserPWMDuty.place(x=46, y=130)
         label_getIPSLaserPower.place(x=46, y=160)
-    elif global_variables.LaserType == 3:
-        pass  # hh laser
+
+
+# for acquisition
+def Config_Laser():
+    lo2 = laseroption2.get()
+    lo2 = int(lo2)
+
+    if lo2 == 0:
+        label_laser1.place_forget()
+        textbox_inttime_concate2.place_forget()
+        label_inttime_concate2.place_forget()
+        button_inttime_concate2.place_forget()
+        label_laser2.place_forget()
+        textbox_laserpower2a.place_forget()
+        textbox_laserpower2b.place_forget()
+        check_showconcat.place_forget()
+        label_concat.place_forget()
+        textbox_concat.place_forget()
+    elif lo2 == 1:
+        if global_variables.LaserType == 2:
+            Set_Laser(global_variables.IPSLaserAdd)
+            Get_All_LaserInfo(global_variables.IPSLaserAdd)
+            global_variables.LEW = float(global_variables.IPSWL)
+        else:
+            pass
+        textbox_inttime_concate2.place_forget()
+        label_inttime_concate2.place_forget()
+        button_inttime_concate2.place_forget()
+        label_laser2.place_forget()
+        textbox_laserpower2b.place_forget()
+        check_showconcat.place_forget()
+        label_concat.place_forget()
+        textbox_concat.place_forget()
+        label_laser1['text'] = f'LEW {global_variables.LEW}, laser power at (%)'
+        label_laser1.place(x=10, y=100)
+        textbox_laserpower2a.place(x=180, y=100)
+    elif lo2 == 2:
+        if global_variables.LaserType == 2:
+            Set_Laser(21)
+            Get_All_LaserInfo(21)
+            global_variables.LEW = float(global_variables.IPSWL)
+            Set_Laser(20)
+            Get_All_LaserInfo(20)
+            global_variables.LEW2 = float(global_variables.IPSWL)
+        else:
+            pass
+        label_inttime_concate2.place(x=10, y=40)
+        textbox_inttime_concate2.place(x=150, y=40)
+        button_inttime_concate2.place(x=250, y=40)
+        label_laser1['text'] = f'LEW {global_variables.LEW}, laser power at (%)'
+        label_laser1.place(x=10, y=100)
+        label_laser2['text'] = f'LEW {global_variables.LEW2}, laser power at (%)'
+        label_laser2.place(x=10, y=130)
+        textbox_laserpower2a.place(x=180, y=100)
+        textbox_laserpower2b.place(x=180, y=130)
+        check_showconcat.place(x=30, y=580)
+        label_concat.place(x=30, y=610)
+        textbox_concat.place(x=180, y=610)
 
 
 def getLaserWL():
@@ -304,46 +402,286 @@ def closeLaser():
 
 
 def scan():
-    # print(time_factor)
-    # print(('Model is ', Model))
-    xarray = np.arange(0, global_variables.PixelNum, 1)
-    data_array = (c_ushort * global_variables.PixelNum)()
-    figure = Figure(figsize=(6, 3), dpi=100)
-    display = figure.add_subplot()
-    display.set_title('Spectrum')
-    display.set_xlabel('Pixel')
-    display.set_ylabel('Intensity')
-    display.set_xlim(0, 600)
-    display.set_ylim(0, 65535)
-    canvas = FigureCanvasTkAgg(figure, master=root)
-    canvas.get_tk_widget().place(x=650, y=250)
-    DT = []
-
-    isDataReadSuccessful = -1
-    if global_variables.InterfaceType == 0:
-        isDataReadSuccessful = add_lib.bwtekDataReadUSB(global_variables.trigger, byref(data_array),
-                                                        global_variables.Channel)
-    elif global_variables.InterfaceType == 1:
-        a = time.time()
-        isDataReadSuccessful = add_librs.bwtekDataReadRS232(global_variables.trigger, byref(data_array),
-                                                            global_variables.Channel)
-        b = time.time()
-        print(f'delta time is {(b - a):6.4} s')
-    if isDataReadSuccessful == global_variables.PixelNum:
-        if global_variables.ReverseX == 1:
-            xarray = xarray[::-1]
-        for j in range(global_variables.PixelNum):
-            if global_variables.ReverseY == 1:
-                DT.append(65535 - data_array[j])
-            else:
-                DT.append(data_array[j])
-        DT = np.array(DT)
-        display.plot(xarray, DT)
+    # set integration time and laser power
+    global_variables.integration_time = int(inttimetext.get())
+    Set_Time(global_variables.integration_time)
+    global_variables.laser_power.value = float(LP.get())
+    Set_Laser_Power(global_variables.laser_power)
+    # obtain pixel array and data array
+    global_variables.pixel_array = np.arange(0, global_variables.PixelNum, 1)
+    global_variables.data_P_array = Get_Data()
+    if len(global_variables.data_P_array):
+        figure = Figure(figsize=(6, 3), dpi=100)
+        display = figure.add_subplot()
+        display.set_title('Spectrum')
+        display.set_xlabel('Pixel')
+        display.set_ylabel('Intensity')
+        display.set_xlim(0, 600)
+        display.set_ylim(0, 65535)
+        canvas = FigureCanvasTkAgg(figure, master=tab_functions)
+        canvas.get_tk_widget().place(x=650, y=250)
+        display.plot(global_variables.pixel_array, global_variables.data_P_array)
         canvas.draw()
 
+
+def multiscan():
+    pass
+
+
+def scan2():
+    # get integration time and laser power
+    global_variables.integration_time = int(inttimetext_concate1.get())
+    global_variables.integration_time2 = int(inttimetext_concate2.get())
+    global_variables.laser_power.value = float(LP2a.get())
+    global_variables.laser_power2.value = float(LP2b.get())
+    lo2 = laseroption2.get()
+    lo2 = int(lo2)
+    if lo2 == 0:
+        # set all laser power to 0
+        lASER_initialize()
+        Set_Laser(20)
+        Set_Laser_Power(c_double(0))
+        Set_Laser(21)
+        Set_Laser_Power(c_double(0))
+        # set integration time
+        Set_Time(global_variables.integration_time)
+        # obtain data
+        global_variables.pixel_array = np.arange(0, global_variables.PixelNum, 1)
+        global_variables.data_P_array = Get_Data()
+        # obtain dark data
+        if int(Enable_dark.get()) == 1:
+            global_variables.dark_array = Get_Data()
+        else:
+            global_variables.dark_array = np.zeros(global_variables.PixelNum, )
+        global_variables.data_P_array = global_variables.data_P_array - global_variables.dark_array
+        if len(global_variables.data_P_array):
+            global_variables.Wavelength_array = convertP2WL(global_variables.pixel_array,
+                                                            global_variables.a_coff)
+            global_variables.RamanShift_array = convertWL2RS(global_variables.Wavelength_array,
+                                                             global_variables.LEW)
+            start = int(global_variables.RamanShift_array[0] / 100 - 1) * 100
+            end = int(global_variables.RamanShift_array[-1] / 100 + 1) * 100
+            global_variables.RamanShift_array_interp = np.arange(start, end + 1, 4)
+            global_variables.data_RS_array_interp = interpolation(global_variables.RamanShift_array,
+                                                                  global_variables.data_P_array,
+                                                                  global_variables.RamanShift_array_interp)
+            # if int(Enable_dark.get()) == 1:
+            #     length_dataP = len(global_variables.data_P_array)
+            #     length_dataRSInterp = len(global_variables.data_RS_array_interp)
+            #     global_variables.data_P_array = np.zeros(length_dataP)
+            #     global_variables.data_RS_array_interp = np.zeros(length_dataRSInterp)
+            SP_plot()
+    elif lo2 == 1:
+        # set laser power
+        lASER_initialize()
+        if global_variables.LaserType == 2:
+            Set_Laser(global_variables.IPSLaserAdd)
+            Set_Laser_Power(global_variables.laser_power)
+        # set integration time
+        Set_Time(global_variables.integration_time)
+        # obtain data
+        global_variables.pixel_array = np.arange(0, global_variables.PixelNum, 1)
+        global_variables.data_P_array = Get_Data()
+        # obtain dark data
+        if int(Enable_dark.get()) == 1:
+            Set_Laser_Power(c_double(0))
+            global_variables.dark_array = Get_Data()
+        else:
+            global_variables.dark_array = np.zeros(global_variables.PixelNum, )
+        global_variables.data_P_array = global_variables.data_P_array - global_variables.dark_array
+        if len(global_variables.data_P_array):
+            global_variables.Wavelength_array = convertP2WL(global_variables.pixel_array,
+                                                            global_variables.a_coff)
+            global_variables.RamanShift_array = convertWL2RS(global_variables.Wavelength_array,
+                                                             global_variables.LEW)
+            start = int(global_variables.RamanShift_array[0] / 100 - 1) * 100
+            end = int(global_variables.RamanShift_array[-1] / 100 + 1) * 100
+            global_variables.RamanShift_array_interp = np.arange(start, end + 1, 4)
+            global_variables.data_RS_array_interp = interpolation(global_variables.RamanShift_array,
+                                                                  global_variables.data_P_array,
+                                                                  global_variables.RamanShift_array_interp)
+            # df = pd.DataFrame(global_variables.data_P_array)
+            # df.to_csv(r'C:\Users\4510042\OneDrive - Metrohm Group\Desktop\scc\ps.csv')
+            SP_plot()
+    elif lo2 == 2:
+        # for laser 1: 1064
+        # set laser power
+        if global_variables.LaserType == 2:
+            Set_Laser(0x14)
+            Set_Laser_Power(c_double(0))
+            Set_Laser(0x15)
+            Set_Laser_Power(global_variables.laser_power)
+        # set integration time
+        Set_Time(global_variables.integration_time)
+        # obtain data
+        global_variables.pixel_array = np.arange(0, global_variables.PixelNum, 1)
+        global_variables.data_P_array = Get_Data()
+        # obtain dark data
+        if int(Enable_dark.get()) == 1:
+            Set_Laser_Power(c_double(0))
+            global_variables.dark_array = Get_Data()
+        else:
+            global_variables.dark_array = np.zeros(global_variables.PixelNum, )
+        global_variables.data_P_array = global_variables.data_P_array - global_variables.dark_array
+        if len(global_variables.data_P_array):
+            global_variables.Wavelength_array = convertP2WL(global_variables.pixel_array,
+                                                            global_variables.a_coff)
+            global_variables.RamanShift_array = convertWL2RS(global_variables.Wavelength_array,
+                                                             global_variables.LEW)
+            start = int(global_variables.RamanShift_array[0] / 100 - 1) * 100
+            end = int(global_variables.RamanShift_array[-1] / 100 + 1) * 100
+            global_variables.RamanShift_array_interp = np.arange(start, end + 1, 4)
+            global_variables.data_RS_array_interp = interpolation(global_variables.RamanShift_array,
+                                                                  global_variables.data_P_array,
+                                                                  global_variables.RamanShift_array_interp)
+        # for laser 2: 860
+        # set laser power
+        if global_variables.LaserType == 2:
+            Set_Laser(0x15)
+            Set_Laser_Power(c_double(0))
+            Set_Laser(0x14)
+            Set_Laser_Power(global_variables.laser_power2)
+        # set integration time
+        Set_Time(global_variables.integration_time2)
+        # obtain data
+        global_variables.pixel_array = np.arange(0, global_variables.PixelNum, 1)
+        global_variables.data_P_array2 = Get_Data()
+        # obtain dark data
+        if int(Enable_dark.get()) == 1:
+            Set_Laser_Power(c_double(0))
+            global_variables.dark_array = Get_Data()
+        else:
+            global_variables.dark_array = np.zeros(global_variables.PixelNum, )
+        global_variables.data_P_array2 = global_variables.data_P_array2 - global_variables.dark_array
+        if len(global_variables.data_P_array2):
+            global_variables.Wavelength_array2 = convertP2WL(global_variables.pixel_array,
+                                                             global_variables.a_coff)
+            global_variables.RamanShift_array2 = convertWL2RS(global_variables.Wavelength_array2,
+                                                              global_variables.LEW2)
+            start = int(global_variables.RamanShift_array2[0] / 100 - 1) * 100
+            end = int(global_variables.RamanShift_array2[-1] / 100 + 1) * 100
+            global_variables.RamanShift_array_interp2 = np.arange(start, end + 1, 4)
+            global_variables.data_RS_array_interp2 = interpolation(global_variables.RamanShift_array2,
+                                                                   global_variables.data_P_array2,
+                                                                   global_variables.RamanShift_array_interp2)
+        SP_plot()
     else:
-        print('scan fails')
-    return xarray, DT
+        pass
+
+
+def SP_plot():
+    figure = Figure(figsize=(7, 5), dpi=100)
+    display = figure.add_subplot()
+    display.set_title('Spectrum')
+    display.set_ylabel('Intensity')
+    display.set_ylim(0, 65535)
+    canvas = FigureCanvasTkAgg(figure, master=tab_acquisition)
+    canvas.get_tk_widget().place(x=280, y=200)
+    lo2 = laseroption2.get()
+    lo2 = int(lo2)
+    sc = show_concat.get()
+    XT = int(xaxistype.get())
+    if XT == 0:
+        display.set_xlabel('Pixel')
+        display.set_xlim(0, global_variables.PixelNum)
+        display.plot(global_variables.pixel_array, global_variables.data_P_array)
+        if lo2 == 2:
+            display.plot(global_variables.pixel_array, global_variables.data_P_array2)
+        canvas.draw()
+    elif XT == 1:
+        display.set_xlabel('Wavelength')
+        display.set_xlim((int(global_variables.Wavelength_array[0] / 100) - 1) * 100,
+                         (int(global_variables.Wavelength_array[-1] / 100) + 1) * 100)
+        display.plot(global_variables.Wavelength_array, global_variables.data_P_array)
+        if lo2 == 2:
+            display.plot(global_variables.Wavelength_array, global_variables.data_P_array2)
+        canvas.draw()
+    elif XT == 2:
+        display.set_xlabel('Raman Shift')
+        display.set_xlim((int(global_variables.RamanShift_array[0] / 100) - 1) * 100,
+                         (int(global_variables.RamanShift_array[-1] / 100) + 1) * 100)
+        display.plot(global_variables.RamanShift_array, global_variables.data_P_array)
+        # cannot display Raman spectrum 2 on the same plot without interpolation
+        canvas.draw()
+    elif XT == 3:
+        display.set_xlabel('Raman Shift')
+        if lo2 != 2:
+            start = global_variables.RamanShift_array_interp[0]
+            end = global_variables.RamanShift_array_interp[-1]
+            display.set_xlim(start, end)
+            display.plot(global_variables.RamanShift_array_interp, global_variables.data_RS_array_interp)
+        else:
+            start = min(global_variables.RamanShift_array_interp[0],
+                        global_variables.RamanShift_array_interp2[0])
+            end = max(global_variables.RamanShift_array_interp[-1],
+                      global_variables.RamanShift_array_interp2[-1])
+            display.set_xlim(start, end)
+            global_variables.RamanShift_array_concat = np.arange(start, end + 1, 4)
+            # length = len(global_variables.RamanShift_array_concat)
+            global_variables.data_RS_array_concat = []
+            if sc == 0:
+                display.plot(global_variables.RamanShift_array_interp, global_variables.data_RS_array_interp)
+                display.plot(global_variables.RamanShift_array_interp2, global_variables.data_RS_array_interp2)
+                canvas.draw()
+            elif sc == 1:
+                point_concat = ConcatP.get()
+                point_concat = int(int(point_concat) / 4) * 4  # round to 4
+                p1 = find_index(global_variables.RamanShift_array_interp, point_concat)
+                p2 = find_index(global_variables.RamanShift_array_interp2, point_concat)
+                if p1 == -1:
+                    print('concatenating point does not exist in 1064 data !')
+                elif p2 == -1:
+                    print('concatenating point does not exist in 860 data !')
+                else:
+                    if global_variables.RamanShift_array_interp[0] <= global_variables.RamanShift_array_interp2[0]:
+                        partone = global_variables.data_RS_array_interp[:p1 + 1]
+                        parttwo = global_variables.data_RS_array_interp2[p2 + 1:]
+                    else:
+                        partone = global_variables.data_RS_array_interp2[:p2 + 1]
+
+                        parttwo = global_variables.data_RS_array_interp[p1 + 1:]
+                    global_variables.data_RS_array_concat = np.concatenate([partone, parttwo])
+                    display.plot(global_variables.RamanShift_array_concat, global_variables.data_RS_array_concat)
+        canvas.draw()
+    else:
+        pass
+
+
+def monitor():
+    ct = Enable_tempmonitor.get()
+    total_scans = int(num_totalscan.get())
+    data_matrix = []
+    timestamp_array = []
+    detector_temperature_array = []
+    for scan_index in range(total_scans):
+        if ct:
+            if Get_Detector_Temp() <= 0:
+                print('Schedule is aborted due to scan error !')
+                break
+            else:
+                timestamp_array.append(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
+                detector_temperature_array.append(global_variables.getTemperature1.value)
+                if abs(global_variables.getTemperature1.value + 25) > 5:
+                    print('Schedule is aborted due to detector out of spec !')
+                    break
+        # set integration time and laser power
+        global_variables.integration_time = int(inttimetext.get())
+        Set_Time(global_variables.integration_time)
+        global_variables.laser_power.value = float(LP.get())
+        Set_Laser_Power(global_variables.laser_power)
+        # obtain pixel array and data array
+        # global_variables.pixel_array = np.arange(0, global_variables.PixelNum, 1)
+        global_variables.data_P_array = Get_Data()
+        data_matrix.append(global_variables.data_P_array)
+        time.sleep(1)
+    df = pd.DataFrame(np.transpose(data_matrix))
+    df.to_csv(r'C:\Users\4510042\OneDrive - Metrohm Group\Desktop\scc\datamatrix.csv', index=False)
+    if len(timestamp_array) != 0:
+        df2 = pd.DataFrame(
+            {'Date and Time': timestamp_array,
+             'Index': range(len(timestamp_array)),
+             'Temperature': detector_temperature_array})
+        df2.to_csv(r'C:\Users\4510042\OneDrive - Metrohm Group\Desktop\scc\temperature_array.csv', index=False)
 
 
 def CDC():
@@ -357,97 +695,73 @@ def CDC():
     _gain = []
     _offset = []
     _std = []
+    Set_Laser_Power(c_double(0))
+    Set_Gain(40000)
     for temperature in global_variables.detector_temperature_array:
+        Set_Laser_Power(c_double(0))
+        Set_Gain(40000)
         temp_set_count = 0
-        add_lib.bwtekReadTemperature(global_variables.Command1, byref(global_variables.ADValue),
-                                     byref(global_variables.getTemperature1), global_variables.Channel)
-        label_CDC['text'] = f'Initial detector temperature is {global_variables.getTemperature1.value:6.4}'
+        if Get_Detector_Temp():
+            label_CDC['text'] = f'Initial detector temperature is {global_variables.getTemperature1.value:6.4}'
         # detector temperature stabilization
         while abs(global_variables.getTemperature1.value - temperature) > 1.0 and temp_set_count <= 20:
-            add_lib.bwtekSetTemperatureUSB(global_variables.DAChannel1, temperature, global_variables.Channel)
+            Set_Detector_Temp(temperature)
             temp_set_count += 1
             # time.sleep(2)
-            add_lib.bwtekReadTemperature(global_variables.Command1, byref(global_variables.ADValue),
-                                         byref(global_variables.getTemperature1), global_variables.Channel)
+            Get_Detector_Temp()
         if temp_set_count > 20:
-            label_CDC[
-                'text'] = f'Detector cannot be stabilized. Current temperature is {global_variables.getTemperature1.value}'
+            label_CDC['text'] = \
+                f'Detector cannot be stabilized. Current temperature is {global_variables.getTemperature1.value} '
         else:
-            label_CDC['text'] = f'Stabilized temperature is {global_variables.getTemperature1.value}...\n'
+            label_CDC['text'] = \
+                f'Stabilized temperature is {global_variables.getTemperature1.value}...\n'
         # no matter temperature is stabilized or not, calibration continues...
-        # abandon the first data right after temperature change
-        add_lib.bwtekSetTimeUSB(200, global_variables.Channel)
-        label_CDC['text'] = 'Scanning'
-        xarray, yarray = scan()
-        label_CDC['text'] = 'First scan after temp change is abandoned'
+        label_CDC['text'] = 'Calibration starts...'
+        Set_Time(200)
+        Get_Data()  # this first data after temperature change is abandoned
         for Integration in global_variables.integration_time_array:
-            add_lib.bwtekSetTimeUSB(Integration * 100, global_variables.Channel)
-            # begin for offset calibration. Offset scans with laser off, set gain as 40000
+            # start offset calibration
+            Set_Laser_Power(c_double(0))
+            Set_Time(Integration)
+            Set_Gain(40000)
             std_array = []
-            df = pd.DataFrame({'Pixel': xarray})
-            gain_value = 40000
-            add_lib.bwtekSetAnalogOut(5, gain_value, global_variables.Channel)
+            df_offset = pd.DataFrame({'Pixel': np.arange(0, global_variables.PixelNum, 1)})
             for offset_value in global_variables.offset_array:
-                add_lib.bwtekSetAnalogOut(4, int(offset_value), global_variables.Channel)
-                label_CDC[
-                    'text'] = f'Scanning: temp {temperature}, time {Integration}, gain {gain_value}, offset {offset_value}'
-                xarray, yarray = scan()
+                Set_Offset(offset_value)
+                yarray = Get_Data()
                 std_array.append(calc_STD(yarray))
-                df[str(offset_value)] = yarray
+                df_offset[str(offset_value)] = yarray
             filename = str(temperature) + '_' + str(Integration) + '_' + 'offset.csv'
-            df.to_csv(filename, index=False)
-            figure2 = Figure(figsize=(8, 4), dpi=100)
-            display2 = figure2.add_subplot()
-            display2.set_title(f'STD curve @ temperature {temperature} : integration time {Integration}')
-            display2.set_xlabel('Offset')
-            display2.set_ylabel('Standard deviation')
-            canvas = FigureCanvasTkAgg(figure2, master=root)
-            canvas.get_tk_widget().place(x=600, y=800)
-            display2.plot(global_variables.offset_array, std_array)
-            df2 = pd.DataFrame({'Offset': global_variables.offset_array, 'STD': std_array})
-            optimized_offset = find_optimized_offset(df2)
-            label_CDC['text'] = f'Optimized offset is {optimized_offset[2]}'
-
+            df_offset.to_csv(filename, index=False)
+            df_std_o = pd.DataFrame({'Offset': global_variables.offset_array, 'STD': std_array})
+            optimized_offset = find_optimized_offset(df_std_o)
             _type.append('O')
             _temperature.append(temperature)
             _integration.append(Integration)
             _gain.append(40000)
             _offset.append(optimized_offset[2])
             _std.append(optimized_offset[3])
-            # end for offset calibration
-            # # begin for gain calibration. gain scans with laser on, set optimized offset obtained above
-            # std_array = []
-            # df = pd.DataFrame({'Pixel': xarray})
-            # offset_value = optimized_offset[2]
-            # add_lib.bwtekSetAnalogOut(4, offset_value, Channel)
-            # for gain_value in gain_array:
-            #     add_lib.bwtekSetAnalogOut(5, int(gain_value), Channel)
-            #     label_CDC[
-            #         'text'] = f'Scanning: temp {temperature}, time {Integration}, gain {gain_value}, offset {offset_value} '
-            #     xarray, yarray = scan()
-            #     std_array.append(calc_STD(yarray))
-            #     df[str(gain_value)] = yarray
-            # filename = str(temperature) + '_' + str(Integration) + '_' + 'gain.csv'
-            # df.to_csv(filename, index=False)
-            # figure3 = Figure(figsize=(8, 4), dpi=100)
-            # display3 = figure3.add_subplot()
-            # display3.set_title(f'STD curve @ temperature {temperature} : integration time {Integration}')
-            # display3.set_xlabel('Gain')
-            # display3.set_ylabel('Standard deviation')
-            # canvas = FigureCanvasTkAgg(figure3, master=root)
-            # canvas.get_tk_widget().place(x=300, y=450)
-            # display3.plot(gain_array, std_array)
-            # df2 = pd.DataFrame({'Gain': gain_array, 'STD': std_array})
-            # optimized_gain = find_optimized_offset(df2)
-            # label_CDC['text'] = f'Optimized gain is {optimized_gain[2]} @ offset {offset_value}'
-            #
-            # _type.append('G')
-            # _temperature.append(temperature)
-            # _integration.append(Integration)
-            # _gain.append(optimized_gain[2])
-            # _offset.append(optimized_offset[2])
-            # _std.append(optimized_gain[3])
-            # # end for gain calibration
+            # start gain calibration
+            Set_Laser_Power(c_double(100))
+            Set_Time(Integration)
+            Set_Offset(optimized_offset[2])
+            std_array = []
+            df_gain = pd.DataFrame({'Pixel': np.arange(0, global_variables.PixelNum, 1)})
+            for gain_value in global_variables.gain_array:
+                Set_Gain(gain_value)
+                yarray = Get_Data()
+                std_array.append(calc_STD(yarray))
+                df_gain[str(gain_value)] = yarray
+            filename = str(temperature) + '_' + str(Integration) + '_' + 'gain.csv'
+            df_gain.to_csv(filename, index=False)
+            df_std_g = pd.DataFrame({'Gain': global_variables.gain_array, 'STD': std_array})
+            optimized_gain = find_optimized_gain(df_std_g)
+            _type.append('G')
+            _temperature.append(temperature)
+            _integration.append(Integration)
+            _gain.append(optimized_gain[2])
+            _offset.append(optimized_offset[2])
+            _std.append(optimized_gain[3])
     df3 = pd.DataFrame({'Type': _type,
                         'Temperature': _temperature,
                         'Integration time(s)': _integration,
@@ -456,6 +770,24 @@ def CDC():
                         'Standard deviation': _std})
     df3.to_csv('CDCalibration.csv', index=False)
     label_CDC['text'] = 'Done'
+
+    # figure2 = Figure(figsize=(8, 4), dpi=100)
+    # display2 = figure2.add_subplot()
+    # display2.set_title(f'STD curve @ temperature {temperature} : integration time {Integration}')
+    # display2.set_xlabel('Offset')
+    # display2.set_ylabel('Standard deviation')
+    # canvas = FigureCanvasTkAgg(figure2, master=root)
+    # canvas.get_tk_widget().place(x=600, y=800)
+    # display2.plot(global_variables.offset_array, std_array)
+    # label_CDC['text'] = f'Optimized offset is {optimized_offset[2]}'
+    # figure3 = Figure(figsize=(8, 4), dpi=100)
+    # display3 = figure3.add_subplot()
+    # display3.set_title(f'STD curve @ temperature {temperature} : integration time {Integration}')
+    # display3.set_xlabel('Gain')
+    # display3.set_ylabel('Standard deviation')
+    # canvas = FigureCanvasTkAgg(figure3, master=root)
+    # canvas.get_tk_widget().place(x=300, y=450)
+    # display3.plot(gain_array, std_array)
 
 
 def close():
@@ -475,11 +807,6 @@ def close():
         button_CDC['state'] = 'disabled'
 
 
-dll_path = 'bwtekusb.dll'
-RS_path = r'C:\Users\4510042\PycharmProjects\USB\bwtekrs.dll'
-add_lib = CDLL(dll_path)
-add_librs = CDLL(RS_path)
-
 root = tk.Tk()
 root.title('SpectroTest')
 root.geometry('1200x900+50+50')
@@ -487,12 +814,16 @@ root.resizable(True, True)
 
 tabControl = ttk.Notebook(root)
 tab_functions = ttk.Frame(tabControl)
+tab_acquisition = ttk.Frame(tabControl)
 tab_cdc = ttk.Frame(tabControl)
 tab_temperature = ttk.Frame(tabControl)
 tab_laser = ttk.Frame(tabControl)
+tab_monitoring = ttk.Frame(tabControl)
 tabControl.add(tab_functions, text=' Functions Test ')
+tabControl.add(tab_acquisition, text='Acquisition')
 tabControl.add(tab_cdc, text=' Channel Difference Calibration ')
 tabControl.add(tab_laser, text=' Laser ')
+tabControl.add(tab_monitoring, text=' Monitoring ')
 tabControl.pack(expand=1, fill="both")
 
 interfacetype = tk.StringVar()
@@ -581,15 +912,128 @@ label_inttime = ttk.Label(tab_functions, text='Integration time (ms)')
 inttimetext = tk.StringVar()
 textbox_inttime = ttk.Entry(tab_functions, textvariable=inttimetext, width=10)
 textbox_inttime.insert(0, '1000')
-button_inttime = ttk.Button(tab_functions, text='Set Integration time', state='disabled', width=30,
+button_inttime = ttk.Button(tab_functions, text="Set Integration time", state='disabled', width=30,
                             command=setIntegrationTime)
 button_inttime.place(x=10, y=370)
 
 button_scan = ttk.Button(tab_functions, text='Scan', state='disabled', width=30,
                          command=scan)
-button_scan.place(x=10, y=430)
+button_scan.place(x=10, y=400)
 
-# Laser session
+button_multiscan = ttk.Button(tab_functions, text='Multi-Scan', state='disabled', width=30,
+                              command=multiscan)
+button_multiscan.place(x=10, y=430)
+
+button_monitor = ttk.Button(tab_functions, text='Monitoring', state='disabled', width=30, command=monitor)
+button_monitor.place(x=10, y=460)
+Enable_tempmonitor = tk.IntVar()
+check_temperature = ttk.Checkbutton(tab_functions,
+                                    text='Temperature monitoring',
+                                    variable=Enable_tempmonitor,
+                                    onvalue=1,
+                                    offvalue=0)
+Enable_tempmonitor.set(0)
+check_temperature.place(x=220, y=460)
+label_totalscan = ttk.Label(tab_functions, text=' # of Total scans:')
+label_totalscan.place(x=10, y=490)
+num_totalscan = tk.StringVar()
+textbox_totalscan = ttk.Entry(tab_functions, textvariable=num_totalscan, width=10)
+textbox_totalscan.insert(0, '10')
+textbox_totalscan.place(x=120, y=490)
+
+button_writeEEPROM = ttk.Button(tab_functions, text='Write EEPROM', state='disabled', width=30, command=writeEEPROM)
+button_writeEEPROM.place(x=10, y=520)
+
+button_close = ttk.Button(tab_functions, text='Close device', state='disabled', width=30,
+                          command=close)
+button_close.place(x=10, y=550)
+
+# Acquisition
+label_inttime_concate1 = ttk.Label(tab_acquisition, text='Integration time (ms)')
+label_inttime_concate1.place(x=10, y=10)
+inttimetext_concate1 = tk.StringVar()
+textbox_inttime_concate1 = ttk.Entry(tab_acquisition, textvariable=inttimetext_concate1, width=10)
+textbox_inttime_concate1.insert(0, '1000')
+textbox_inttime_concate1.place(x=150, y=10)
+button_inttime_concate1 = ttk.Button(tab_acquisition, text='Set', state='disabled', width=5,
+                                     command=setIntegrationTime)
+button_inttime_concate1.place(x=250, y=10)
+
+label_inttime_concate2 = ttk.Label(tab_acquisition, text='Integration time (ms)')
+
+inttimetext_concate2 = tk.StringVar()
+textbox_inttime_concate2 = ttk.Entry(tab_acquisition, textvariable=inttimetext_concate2, width=10)
+textbox_inttime_concate2.insert(0, '1000')
+
+button_inttime_concate2 = ttk.Button(tab_acquisition, text='Set', state='disabled', width=5,
+                                     command=setIntegrationTime)
+####
+laseroption2 = tk.IntVar()
+radio_laser_02 = ttk.Radiobutton(tab_acquisition, text='No Laser selected', variable=laseroption2, value=0,
+                                 command=Config_Laser)
+radio_laser_12 = ttk.Radiobutton(tab_acquisition, text='Single Laser', variable=laseroption2, value=1,
+                                 command=Config_Laser)
+radio_laser_22 = ttk.Radiobutton(tab_acquisition, text='Dual Lasers', variable=laseroption2, value=2,
+                                 command=Config_Laser)
+laseroption2.set(0)
+
+radio_laser_02.place(x=10, y=70)
+radio_laser_12.place(x=150, y=70)
+radio_laser_22.place(x=250, y=70)
+
+label_laser1 = ttk.Label(tab_acquisition)
+label_laser2 = ttk.Label(tab_acquisition)
+
+LP2a = tk.StringVar()
+textbox_laserpower2a = ttk.Entry(tab_acquisition, textvariable=LP2a, width=10)
+textbox_laserpower2a.insert(0, '100.0')
+
+LP2b = tk.StringVar()
+textbox_laserpower2b = ttk.Entry(tab_acquisition, textvariable=LP2b, width=10)
+textbox_laserpower2b.insert(0, '100.0')
+
+button_scan2 = ttk.Button(tab_acquisition, text='Scan 2', state='disabled', width=30, command=scan2)
+button_scan2.place(x=10, y=430)
+
+xaxistype = tk.IntVar()
+radio_xaxistype_0 = ttk.Radiobutton(tab_acquisition, text='pixel', variable=xaxistype, value=0,
+                                    command=SP_plot)
+radio_xaxistype_1 = ttk.Radiobutton(tab_acquisition, text='wavelength', variable=xaxistype, value=1,
+                                    command=SP_plot)
+radio_xaxistype_2 = ttk.Radiobutton(tab_acquisition, text='Raman Shift', variable=xaxistype, value=2,
+                                    command=SP_plot)
+radio_xaxistype_3 = ttk.Radiobutton(tab_acquisition, text='Interp Raman Shift', variable=xaxistype, value=3,
+                                    command=SP_plot)
+
+xaxistype.set(0)
+radio_xaxistype_0.place(x=30, y=460)
+radio_xaxistype_1.place(x=30, y=490)
+radio_xaxistype_2.place(x=30, y=520)
+radio_xaxistype_3.place(x=30, y=550)
+
+show_concat = tk.IntVar()
+check_showconcat = ttk.Checkbutton(tab_acquisition,
+                                   text='Show concatenation',
+                                   variable=show_concat,
+                                   onvalue=1,
+                                   offvalue=0)
+show_concat.set(0)
+
+label_concat = ttk.Label(tab_acquisition, text='Concatenating at (cm-1) ')
+ConcatP = tk.StringVar()
+textbox_concat = ttk.Entry(tab_acquisition, textvariable=ConcatP, width=10)
+textbox_concat.insert(0, '2000')
+
+Enable_dark = tk.IntVar()
+check_dark = ttk.Checkbutton(tab_acquisition,
+                             text='Auto Dark',
+                             variable=Enable_dark,
+                             onvalue=1,
+                             offvalue=0)
+Enable_dark.set(0)
+check_dark.place(x=30, y=640)
+
+# Laser
 button_initializeLaser = ttk.Button(tab_laser, text='Initialize laser', width=30, command=initializeLaser)
 button_initializeLaser.place(x=10, y=10)
 
@@ -639,9 +1083,5 @@ button_CDC = ttk.Button(tab_cdc, text='Channel Difference Calibration', state='d
 button_CDC.place(x=10, y=10)
 label_CDC = ttk.Label(tab_cdc)
 label_CDC.place(x=250, y=10)
-
-button_close = ttk.Button(tab_functions, text='Close device', state='disabled', width=30,
-                          command=close)
-button_close.place(x=10, y=490)
 
 root.mainloop()
